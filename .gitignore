@@ -1,0 +1,26 @@
+﻿# Python缓存
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 数据文件（不提交）
+*.xls
+*.xlsx
+results-*.xls
+
+# 生成的报告（不提交）
+分析/
+*.md
+!README.md
+!结果分析方法.md
+
+# IDE配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 临时文件
+*.tmp
+*.log
+.DS_Store
