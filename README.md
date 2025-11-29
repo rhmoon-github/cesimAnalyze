@@ -1,17 +1,18 @@
-# 结果分析方法论工具集 v3.0
+# 商业模拟竞赛结果分析方法论工具集 v3.0
 
-本目录包含企业模拟经营战报结果分析的完整工具集，基于**方法论3.0版本**。
+本仓库包含企业模拟经营战报结果分析的完整工具集，基于**方法论3.0版本**。适用于商业模拟竞赛（如Cesim）的多回合数据分析。
 
 ---
 
 ## 📋 目录结构
 
 ```
-结果分析方法/
+cesim18th/
 ├── analyze_comprehensive_v3.py  # 核心分析脚本（v3.0）
 ├── utils_data_analysis.py       # 数据分析工具模块
 ├── 结果分析方法.md                # 方法论文档（v3.0）
-└── README.md                    # 本说明文件
+├── README.md                    # 本说明文件
+└── .gitignore                   # Git忽略配置
 ```
 
 ---
@@ -30,12 +31,33 @@
 
 **使用方法**：
 ```bash
-cd cesim/2025年11月26日-更新日志/方法论/结果分析方法
+# 进入项目目录
+cd cesim18th
+
+# 方式1：使用默认路径（数据在项目上级目录的 '结果/' 文件夹，报告输出到 '分析/' 文件夹）
 python analyze_comprehensive_v3.py
+
+# 方式2：指定数据输入目录
+python analyze_comprehensive_v3.py --input-dir /path/to/data
+
+# 方式3：指定数据输入目录和输出目录
+python analyze_comprehensive_v3.py --input-dir /path/to/data --output-dir /path/to/output
+
+# 方式4：使用短参数
+python analyze_comprehensive_v3.py -i ./data -o ./reports
+
+# 查看帮助信息
+python analyze_comprehensive_v3.py --help
 ```
 
+**命令行参数**：
+- `--input-dir, -i`: 数据输入目录路径（包含 results-ir00.xls 等文件）
+- `--output-dir, -o`: 分析报告输出目录路径
+- `--help, -h`: 显示帮助信息
+
 **输出**：
-- 生成位置：`cesim/2025年11月26日-更新日志/分析/方法论3.0完整分析报告.md`
+- 分析报告会生成在指定的输出目录中（默认在项目上级目录的 `分析/` 文件夹）
+- 主要报告：`方法论3.0完整分析报告.md`
 
 ---
 
@@ -83,63 +105,127 @@ cash = get_metric_value(metrics_dict, '现金', '做大做强')
 
 ---
 
-## 📂 数据文件路径
+## 📂 数据文件配置
 
-**默认数据源**：
-- 路径：`cesim/2025年11月26日-更新日志/结果/`
-- 文件：
-  - `results-ir00.xls` - 初始回合（回合0）
-  - `results-pr01.xls` - 第一回合
-  - `results-pr02.xls` - 第二回合
-  - `results-pr03.xls` - 第三回合
+### 数据文件要求
 
-**修改数据路径**：
-编辑 `analyze_comprehensive_v3.py` 中的 `BASE_DIR` 变量：
+分析脚本需要以下回合的Excel结果文件：
+- `results-ir00.xls` - 初始回合（回合0）
+- `results-pr01.xls` - 第一回合
+- `results-pr02.xls` - 第二回合
+- `results-pr03.xls` - 第三回合
+
+### 配置数据路径
+
+**推荐方式：使用命令行参数**（无需修改代码）：
+```bash
+# 指定数据输入目录和输出目录
+python analyze_comprehensive_v3.py --input-dir /path/to/data --output-dir /path/to/output
+```
+
+**默认配置**：
+如果不指定参数，脚本默认从项目上级目录的 `结果/` 文件夹读取数据，输出到 `分析/` 文件夹。
+
+**通过代码配置**（高级用法）：
+如果需要修改默认路径，可以编辑 `analyze_comprehensive_v3.py` 中的默认配置：
 ```python
-BASE_DIR = Path(__file__).parent.parent.parent / '结果'
+# 默认输入目录
+DEFAULT_INPUT_DIR = Path(__file__).parent.parent.parent / '结果'
+
+# 默认输出目录
+DEFAULT_OUTPUT_DIR = Path(__file__).parent.parent.parent / '分析'
+```
+
+**配置队伍名称映射**：
+如果队伍名称需要映射，编辑 `TEAM_NAME_MAPPING` 字典：
+```python
+TEAM_NAME_MAPPING = {
+    '原始队伍名1': '映射后的名称1',
+    '原始队伍名2': '映射后的名称2',
+}
 ```
 
 ---
 
 ## 📊 输出报告
 
-分析脚本会生成以下报告：
+分析脚本会生成以下报告（输出位置在脚本中配置）：
 
 1. **方法论3.0完整分析报告.md**
-   - 位置：`cesim/2025年11月26日-更新日志/分析/`
    - 内容：完整的分析报告，包含执行摘要、数据验证、财务诊断、竞争分析、趋势分析等
+   - 包含章节：
+     - 执行摘要
+     - 数据基础建设验证
+     - 自身诊断分析（财务健康度、现金流、市场表现）
+     - 竞争分析解码（对标矩阵、策略突变、意图预测）
+     - 多回合趋势分析
 
 2. **分析执行总结.md**
-   - 位置：`cesim/2025年11月26日-更新日志/分析/`
    - 内容：分析执行情况总结和关键发现
 
 3. **数据异常原因分析报告.md**
-   - 位置：`cesim/2025年11月26日-更新日志/分析/`
    - 内容：数据异常问题的诊断和解决方案
+
+**注意**：输出目录路径在脚本中配置，默认在项目上级目录的 `分析/` 文件夹中。
 
 ---
 
 ## 🚀 快速开始
 
-### 1. 安装依赖
+### 1. 环境要求
+
+- Python 3.7+
+- 必需的Python包
+
+### 2. 安装依赖
 
 ```bash
-pip install pandas numpy xlrd
+pip install pandas numpy xlrd openpyxl
 ```
 
-### 2. 运行分析
+**说明**：
+- `pandas` - 数据处理和分析
+- `numpy` - 数值计算
+- `xlrd` - 读取旧版Excel文件（.xls格式）
+- `openpyxl` - 读取新版Excel文件（.xlsx格式，如需要）
+
+### 3. 准备数据文件
+
+将回合结果Excel文件放置在配置的数据目录中：
+- `results-ir00.xls` - 初始回合
+- `results-pr01.xls` - 第一回合
+- `results-pr02.xls` - 第二回合
+- `results-pr03.xls` - 第三回合
+
+### 4. 配置脚本（可选）
+
+根据需要修改 `analyze_comprehensive_v3.py` 中的配置：
+- `BASE_DIR` - 数据文件路径
+- `TEAM_NAME_MAPPING` - 队伍名称映射
+- `THRESHOLDS` - 分析阈值配置
+
+### 5. 运行分析
 
 ```bash
-# 进入脚本目录
-cd cesim/2025年11月26日-更新日志/方法论/结果分析方法
+# 进入项目目录
+cd cesim18th
 
-# 运行分析脚本
+# 方式1：使用默认路径
 python analyze_comprehensive_v3.py
+
+# 方式2：指定自定义路径
+python analyze_comprehensive_v3.py --input-dir ./data --output-dir ./reports
 ```
 
-### 3. 查看报告
+**注意**：如果使用自定义路径，确保数据目录中包含以下文件：
+- `results-ir00.xls` - 初始回合
+- `results-pr01.xls` - 第一回合
+- `results-pr02.xls` - 第二回合
+- `results-pr03.xls` - 第三回合
 
-分析完成后，在 `分析/` 目录下查看生成的报告。
+### 6. 查看报告
+
+分析完成后，在配置的输出目录中查看生成的报告文件。
 
 ---
 
@@ -150,6 +236,8 @@ python analyze_comprehensive_v3.py
   - 优化指标提取逻辑
   - 校准阈值配置
   - 完善分析流程
+  - 支持多回合数据对比分析
+  - 增强数据验证和异常检测
 
 - **v2.0** (已废弃)
   - 旧版本，已移除相关脚本和报告
@@ -158,10 +246,12 @@ python analyze_comprehensive_v3.py
 
 ## ⚠️ 注意事项
 
-1. **数据路径**：确保数据文件路径正确
-2. **编码问题**：脚本使用UTF-8编码，确保系统支持
-3. **数据完整性**：如有数据缺失或异常，会标记在报告中
-4. **指标映射**：如遇到指标提取失败，请参考方法论文档中的指标名称映射表
+1. **数据路径**：确保数据文件路径配置正确，文件存在且可读
+2. **编码问题**：脚本使用UTF-8编码，确保系统支持中文显示
+3. **数据完整性**：如有数据缺失或异常，会标记在报告中，请检查数据异常原因分析报告
+4. **指标映射**：如遇到指标提取失败，请参考方法论文档中的"指标名称映射体系"章节
+5. **Excel格式**：确保Excel文件格式正确，建议使用标准的Cesim导出格式
+6. **队伍名称**：如果队伍名称包含特殊字符或需要映射，请在脚本中配置 `TEAM_NAME_MAPPING`
 
 ---
 
@@ -197,9 +287,19 @@ python analyze_comprehensive_v3.py
 
 ## 📚 相关文档
 
-- [结果分析方法.md](结果分析方法.md) - 完整的方法论文档
-- [分析执行总结.md](../分析/分析执行总结.md) - 分析执行情况总结
-- [数据异常原因分析报告.md](../分析/数据异常原因分析报告.md) - 数据问题诊断报告
+- [结果分析方法.md](结果分析方法.md) - 完整的方法论文档（v3.0），包含详细的分析流程、指标说明、公式库等
+- 分析执行总结 - 每次运行后生成的执行情况总结
+- 数据异常原因分析报告 - 数据问题诊断和解决方案报告
+
+**方法论文档包含**：
+- 方法论概述和流程
+- 数据基础建设指南
+- 自身诊断分析方法
+- 竞争分析解码技巧
+- 决策支持体系
+- 标准输出模板
+- 工具与方法库（代码示例、公式库）
+- 迭代与优化机制
 
 ---
 
@@ -209,8 +309,14 @@ python analyze_comprehensive_v3.py
 1. 查看方法论文档中的"迭代与优化"章节
 2. 参考现有的分析报告和诊断报告
 3. 根据方法论进行改进和优化
+4. 提交Issue或Pull Request到本仓库
+
+## 📄 许可证
+
+本项目仅供学习和研究使用。
 
 ---
 
 **最后更新**：2025-11-27  
-**当前版本**：3.0
+**当前版本**：3.0  
+**仓库地址**：https://github.com/rhmoon-github/cesimAnalyze

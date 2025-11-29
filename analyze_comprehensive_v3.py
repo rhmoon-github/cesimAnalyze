@@ -7,6 +7,7 @@
 
 import sys
 import os
+import argparse
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
@@ -24,15 +25,19 @@ from utils_data_analysis import (
 # 配置部分
 # ============================================================================
 
-# 文件路径配置
-BASE_DIR = Path(__file__).parent.parent.parent / '结果'
+# 默认文件路径配置（可通过命令行参数覆盖）
+DEFAULT_INPUT_DIR = Path(__file__).parent.parent.parent / '结果'
+DEFAULT_OUTPUT_DIR = Path(__file__).parent.parent.parent / '分析'
 
-FILES = {
-    'ir00': BASE_DIR / 'results-ir00.xls',
-    'pr01': BASE_DIR / 'results-pr01.xls',
-    'pr02': BASE_DIR / 'results-pr02.xls',
-    'pr03': BASE_DIR / 'results-pr03.xls',
-}
+def get_data_files(input_dir):
+    """根据输入目录生成数据文件路径字典"""
+    base_dir = Path(input_dir)
+    return {
+        'ir00': base_dir / 'results-ir00.xls',
+        'pr01': base_dir / 'results-pr01.xls',
+        'pr02': base_dir / 'results-pr02.xls',
+        'pr03': base_dir / 'results-pr03.xls',
+    }
 
 # 队伍名称映射
 TEAM_NAME_MAPPING = {
@@ -1378,11 +1383,34 @@ def validate_logic(all_rounds_data, teams, health_data, derived_metrics,
 # 主程序
 # ============================================================================
 
-def main():
-    """主函数"""
+def main(input_dir=None, output_dir=None):
+    """
+    主函数
+    
+    参数:
+        input_dir: 数据输入目录路径（包含 results-ir00.xls 等文件）
+        output_dir: 分析报告输出目录路径
+    """
+    # 设置默认路径
+    if input_dir is None:
+        input_dir = DEFAULT_INPUT_DIR
+    else:
+        input_dir = Path(input_dir)
+    
+    if output_dir is None:
+        output_dir = DEFAULT_OUTPUT_DIR
+    else:
+        output_dir = Path(output_dir)
+    
+    # 生成数据文件路径
+    FILES = get_data_files(input_dir)
+    
     print("=" * 80)
     print("商业模拟竞赛结果综合分析 v3.0")
     print("严格按照方法论文档3.0版本进行分析")
+    print("=" * 80)
+    print(f"数据输入目录: {input_dir}")
+    print(f"报告输出目录: {output_dir}")
     print("=" * 80)
     
     # 第一步：数据基础建设
@@ -1495,7 +1523,6 @@ def main():
     )
     
     # 保存报告
-    output_dir = Path(__file__).parent.parent.parent / '分析'
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / '方法论3.0完整分析报告.md'
     
@@ -1509,5 +1536,51 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(
+        description='商业模拟竞赛结果综合分析脚本 v3.0',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  # 使用默认路径
+  python analyze_comprehensive_v3.py
+  
+  # 指定数据输入目录
+  python analyze_comprehensive_v3.py --input-dir /path/to/data
+  
+  # 指定数据输入目录和输出目录
+  python analyze_comprehensive_v3.py --input-dir /path/to/data --output-dir /path/to/output
+  
+  # 使用相对路径
+  python analyze_comprehensive_v3.py --input-dir ./data --output-dir ./reports
+        """
+    )
+    
+    parser.add_argument(
+        '--input-dir', '-i',
+        type=str,
+        default=None,
+        help=f'数据输入目录路径（包含 results-ir00.xls 等文件）。默认: {DEFAULT_INPUT_DIR}'
+    )
+    
+    parser.add_argument(
+        '--output-dir', '-o',
+        type=str,
+        default=None,
+        help=f'分析报告输出目录路径。默认: {DEFAULT_OUTPUT_DIR}'
+    )
+    
+    args = parser.parse_args()
+    
+    # 验证输入目录
+    if args.input_dir:
+        input_path = Path(args.input_dir)
+        if not input_path.exists():
+            print(f"错误: 输入目录不存在: {input_path}")
+            sys.exit(1)
+        if not input_path.is_dir():
+            print(f"错误: 输入路径不是目录: {input_path}")
+            sys.exit(1)
+    
+    # 运行主函数
+    main(input_dir=args.input_dir, output_dir=args.output_dir)
 
