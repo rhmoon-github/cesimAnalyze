@@ -30,14 +30,44 @@ DEFAULT_INPUT_DIR = Path(__file__).parent.parent.parent / '结果'
 DEFAULT_OUTPUT_DIR = Path(__file__).parent.parent.parent / '分析'
 
 def get_data_files(input_dir):
-    """根据输入目录生成数据文件路径字典"""
+    """
+    根据输入目录自动检测所有符合命名规则的数据文件
+    支持 ir00, pr01, pr02, pr03, pr04, pr05... 等任意数量的回合
+    """
     base_dir = Path(input_dir)
-    return {
-        'ir00': base_dir / 'results-ir00.xls',
-        'pr01': base_dir / 'results-pr01.xls',
-        'pr02': base_dir / 'results-pr02.xls',
-        'pr03': base_dir / 'results-pr03.xls',
-    }
+    files = {}
+    
+    # 首先检查 ir00（初始回合）
+    ir00_path = base_dir / 'results-ir00.xls'
+    if ir00_path.exists():
+        files['ir00'] = ir00_path
+    
+    # 自动检测 pr01, pr02, pr03, pr04, pr05... 等回合文件
+    # 最多检测到 pr99（足够支持大部分场景）
+    # 使用更智能的检测策略：扫描所有可能的回合文件
+    for i in range(1, 100):
+        round_name = f'pr{i:02d}'
+        file_path = base_dir / f'results-{round_name}.xls'
+        if file_path.exists():
+            files[round_name] = file_path
+    
+    return files
+
+
+def get_rounds_order(all_rounds_data=None):
+    """
+    生成回合顺序列表（用于排序和遍历）
+    如果提供了 all_rounds_data，则只返回其中存在的回合
+    """
+    # 生成完整的回合列表（最多支持到 pr99）
+    rounds = ['ir00']
+    rounds.extend([f'pr{i:02d}' for i in range(1, 100)])
+    
+    if all_rounds_data is not None:
+        # 只返回实际存在的回合
+        return [r for r in rounds if r in all_rounds_data]
+    
+    return rounds
 
 # 队伍名称映射
 TEAM_NAME_MAPPING = {
@@ -142,7 +172,7 @@ def detect_anomalies(metrics_dict, teams):
 def calculate_derived_metrics(all_rounds_data, teams):
     """计算衍生指标"""
     derived = {}
-    rounds = ['ir00', 'pr01', 'pr02', 'pr03']
+    rounds = get_rounds_order(all_rounds_data)
     
     for rnd in rounds:
         if rnd not in all_rounds_data:
@@ -421,7 +451,7 @@ def analyze_regional_market(all_rounds_data, teams, round_name):
         region_total_sales[region] = {'total': total, 'team_sales': region_sales}
     
     # 计算销售趋势（对比上回合）
-    rounds = ['ir00', 'pr01', 'pr02', 'pr03']
+    rounds = get_rounds_order(all_rounds_data)
     round_idx = rounds.index(round_name) if round_name in rounds else -1
     prev_round = rounds[round_idx - 1] if round_idx > 0 else None
     
@@ -565,7 +595,7 @@ def calculate_competitive_position(metrics_dict, teams):
 def detect_strategy_changes(all_rounds_data, teams):
     """策略突变检测"""
     changes = {}
-    rounds = ['ir00', 'pr01', 'pr02', 'pr03']
+    rounds = get_rounds_order(all_rounds_data)
     
     for team in teams:
         changes[team] = {
@@ -630,7 +660,7 @@ def detect_region_entry(all_rounds_data, teams):
     从方法论文档4.2.2节
     """
     region_entry_alerts = {}
-    rounds = ['ir00', 'pr01', 'pr02', 'pr03']
+    rounds = get_rounds_order(all_rounds_data)
     regions = ['美国', '亚洲', '欧洲']
     
     for team in teams:
@@ -957,8 +987,11 @@ def generate_comprehensive_report(all_rounds_data, teams, health_data, cash_flow
             # 获取关键指标
             profit = get_metric_with_priority(metrics_dict, '净利润', team) or 0
             cash = get_metric_with_priority(metrics_dict, '现金', team) or 0
-            prev_round = 'pr02' if latest_round == 'pr03' else 'pr01'
-            if prev_round in all_rounds_data:
+            # 确定上一回合（用于计算环比增长率）
+            rounds_order = get_rounds_order(all_rounds_data)
+            latest_idx = rounds_order.index(latest_round) if latest_round in rounds_order else -1
+            prev_round = rounds_order[latest_idx - 1] if latest_idx > 0 else None
+            if prev_round and prev_round in all_rounds_data:
                 prev_profit = get_metric_with_priority(all_rounds_data[prev_round], '净利润', team) or 0
                 if prev_profit != 0:
                     profit_growth = ((profit - prev_profit) / abs(prev_profit)) * 100
@@ -1123,8 +1156,8 @@ def generate_comprehensive_report(all_rounds_data, teams, health_data, cash_flow
     # 五、多回合趋势分析
     report.append("\n\n## 五、多回合趋势分析\n")
     
-    rounds = ['ir00', 'pr01', 'pr02', 'pr03']
-    available_rounds = [r for r in rounds if r in all_rounds_data]
+    rounds = get_rounds_order(all_rounds_data)
+    available_rounds = rounds  # 已经过滤了，直接使用
     
     for metric_name in ['销售额', '净利润', '现金']:
         report.append(f"\n### {metric_name}趋势\n")
@@ -1361,7 +1394,8 @@ def validate_logic(all_rounds_data, teams, health_data, derived_metrics,
     # (这部分在主函数中调用时验证)
     
     # 3. 验证排名逻辑
-    for rnd in ['ir00', 'pr01', 'pr02', 'pr03']:
+    rounds = get_rounds_order(all_rounds_data)
+    for rnd in rounds:
         if rnd in all_rounds_data:
             derived = derived_metrics.get(rnd, {})
             sales_rankings = derived.get('销售额_排名', {})
@@ -1437,7 +1471,16 @@ def main(input_dir=None, output_dir=None):
         print("错误: 未能读取任何数据文件")
         return
     
-    latest_round = 'pr03' if 'pr03' in all_rounds_data else 'pr02'
+    # 确定最新回合（按优先级：pr99 > ... > pr03 > pr02 > pr01 > ir00）
+    rounds_order = get_rounds_order()
+    # 从后往前查找，找到第一个存在的回合
+    latest_round = None
+    for rnd in reversed(rounds_order):
+        if rnd in all_rounds_data:
+            latest_round = rnd
+            break
+    if latest_round is None:
+        latest_round = list(all_rounds_data.keys())[0]  # 使用第一个可用的回合
     print(f"\n  最新回合: {latest_round}")
     
     # 异常值检测
@@ -1456,8 +1499,14 @@ def main(input_dir=None, output_dir=None):
     health_data = calculate_financial_health(all_rounds_data[latest_round], teams)
     
     print("  分析现金流...")
-    prev_round = 'pr02' if latest_round == 'pr03' else 'pr01'
-    prev_metrics = all_rounds_data.get(prev_round, {})
+    # 确定上一回合（用于现金流分析）
+    rounds_order = get_rounds_order(all_rounds_data)
+    latest_idx = rounds_order.index(latest_round) if latest_round in rounds_order else -1
+    if latest_idx > 0:
+        prev_round = rounds_order[latest_idx - 1]
+    else:
+        prev_round = None
+    prev_metrics = all_rounds_data.get(prev_round, {}) if prev_round else {}
     cash_flow_data = analyze_cash_flow_source(all_rounds_data[latest_round], teams, prev_metrics)
     
     print("  分析区域市场表现...")
