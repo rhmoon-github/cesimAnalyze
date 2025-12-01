@@ -4,15 +4,70 @@
 
 ---
 
+## 🔄 分析方法
+
+本工具集采用**三步分析法**，从结果数据到决策方案的完整流程：
+
+### 步骤一：结果数据分析
+
+**工具**：`scripts/analyze_comprehensive_v3.py`
+
+**输入**：回合结果Excel文件（`results-ir00.xls`、`results-pr01.xls`、`results-pr02.xls`、`results-pr03.xls`等）
+
+**输出**：方法论3.0完整分析报告（包含财务健康度、竞争分析、趋势分析等）
+
+**使用方法**：
+```bash
+python scripts/analyze_comprehensive_v3.py --input-dir ./data --output-dir ./reports
+```
+
+### 步骤二：页面数据分析
+
+**工具**：`docs/prompts/MHTML页面解析提示词.md`（AI提示词）
+
+**输入**：Cesim决策页面的MHTML格式文件
+
+**输出**：各页面分析报告（需求预测、生产、营销、研发、物流、税收、财务等页面）
+
+**使用方法**：
+1. 将Cesim决策页面保存为MHTML格式
+2. 使用大模型（如GPT、Claude等）加载`MHTML页面解析提示词.md`
+3. 将MHTML文件内容输入大模型，获取结构化分析报告
+
+### 步骤三：决策方案制定
+
+**工具**：`docs/prompts/决策制定提示词.md`（AI提示词）
+
+**输入**：
+- 步骤一生成的方法论3.0完整分析报告
+- 步骤二生成的所有页面分析报告
+
+**输出**：决策项具体方案与输入建议（包含69项决策的完整方案）
+
+**使用方法**：
+1. 使用大模型加载`决策制定提示词.md`
+2. 将步骤一和步骤二的分析报告输入大模型
+3. 获取完整的决策方案文档
+
+---
+
 ## 📋 目录结构
 
 ```
 cesim18th/
-├── analyze_comprehensive_v3.py  # 核心分析脚本（v3.0）
-├── utils_data_analysis.py       # 数据分析工具模块
-├── 结果分析方法.md                # 方法论文档（v3.0）
+├── scripts/                     # 分析脚本目录
+│   └── analyze_comprehensive_v3.py  # 核心分析脚本（v3.0）
+├── utils/                       # 工具模块目录
+│   └── utils_data_analysis.py   # 数据分析工具模块
+├── docs/                        # 文档目录
+│   ├── methodology/             # 方法论文档
+│   │   └── 结果分析方法.md      # 方法论文档（v3.0）
+│   └── prompts/                 # 提示词文档
+│       ├── 决策制定提示词.md    # 决策制定相关提示词文档
+│       └── MHTML页面解析提示词.md # MHTML页面解析相关提示词文档
 ├── README.md                    # 本说明文件
-└── .gitignore                   # Git忽略配置
+├── .gitignore                   # Git忽略配置
+└── __pycache__/                 # Python缓存目录（自动生成）
 ```
 
 ---
@@ -35,19 +90,19 @@ cesim18th/
 cd cesim18th
 
 # 方式1：使用默认路径（数据在项目上级目录的 '结果/' 文件夹，报告输出到 '分析/' 文件夹）
-python analyze_comprehensive_v3.py
+python scripts/analyze_comprehensive_v3.py
 
 # 方式2：指定数据输入目录
-python analyze_comprehensive_v3.py --input-dir /path/to/data
+python scripts/analyze_comprehensive_v3.py --input-dir /path/to/data
 
 # 方式3：指定数据输入目录和输出目录
-python analyze_comprehensive_v3.py --input-dir /path/to/data --output-dir /path/to/output
+python scripts/analyze_comprehensive_v3.py --input-dir /path/to/data --output-dir /path/to/output
 
 # 方式4：使用短参数
-python analyze_comprehensive_v3.py -i ./data -o ./reports
+python scripts/analyze_comprehensive_v3.py -i ./data -o ./reports
 
 # 查看帮助信息
-python analyze_comprehensive_v3.py --help
+python scripts/analyze_comprehensive_v3.py --help
 ```
 
 **命令行参数**：
@@ -67,7 +122,7 @@ python analyze_comprehensive_v3.py --help
 
 **主要函数**：
 ```python
-from utils_data_analysis import (
+from utils.utils_data_analysis import (
     read_excel_data,      # 读取Excel文件并解析数据
     find_metric,          # 根据关键词查找指标
     get_metric_value,     # 获取特定队伍和指标的数值
@@ -78,7 +133,7 @@ from utils_data_analysis import (
 
 **使用示例**：
 ```python
-from utils_data_analysis import read_excel_data, get_metric_value
+from utils.utils_data_analysis import read_excel_data, get_metric_value
 
 # 读取数据
 metrics_dict, teams = read_excel_data('results-pr03.xls')
@@ -93,6 +148,8 @@ cash = get_metric_value(metrics_dict, '现金', '做大做强')
 
 **方法论文档** - 完整的方法论3.0版本说明文档
 
+**文件位置**：`docs/methodology/结果分析方法.md`
+
 **包含内容**：
 - 方法论概述（定位、流程、时间管理）
 - 数据基础建设（指标映射、验证清洗）
@@ -102,6 +159,26 @@ cash = get_metric_value(metrics_dict, '现金', '做大做强')
 - 标准输出模板
 - 工具与方法库（代码示例、公式库）
 - 迭代与优化机制
+
+---
+
+### 4. 决策制定提示词.md
+
+**决策制定提示词文档** - AI执行版的决策制定提示词
+
+**文件位置**：`docs/prompts/决策制定提示词.md`
+
+**用途**：为AI提供决策制定的完整流程和提示词模板
+
+---
+
+### 5. MHTML页面解析提示词.md
+
+**MHTML页面解析提示词文档** - AI执行版的页面解析提示词
+
+**文件位置**：`docs/prompts/MHTML页面解析提示词.md`
+
+**用途**：为AI提供从MHTML格式页面中提取结构化数据的完整流程
 
 ---
 
@@ -120,14 +197,14 @@ cash = get_metric_value(metrics_dict, '现金', '做大做强')
 **推荐方式：使用命令行参数**（无需修改代码）：
 ```bash
 # 指定数据输入目录和输出目录
-python analyze_comprehensive_v3.py --input-dir /path/to/data --output-dir /path/to/output
+python scripts/analyze_comprehensive_v3.py --input-dir /path/to/data --output-dir /path/to/output
 ```
 
 **默认配置**：
 如果不指定参数，脚本默认从项目上级目录的 `结果/` 文件夹读取数据，输出到 `分析/` 文件夹。
 
 **通过代码配置**（高级用法）：
-如果需要修改默认路径，可以编辑 `analyze_comprehensive_v3.py` 中的默认配置：
+如果需要修改默认路径，可以编辑 `scripts/analyze_comprehensive_v3.py` 中的默认配置：
 ```python
 # 默认输入目录
 DEFAULT_INPUT_DIR = Path(__file__).parent.parent.parent / '结果'
@@ -199,7 +276,7 @@ pip install pandas numpy xlrd openpyxl
 
 ### 4. 配置脚本（可选）
 
-根据需要修改 `analyze_comprehensive_v3.py` 中的配置：
+根据需要修改 `scripts/analyze_comprehensive_v3.py` 中的配置：
 - `BASE_DIR` - 数据文件路径
 - `TEAM_NAME_MAPPING` - 队伍名称映射
 - `THRESHOLDS` - 分析阈值配置
@@ -211,10 +288,10 @@ pip install pandas numpy xlrd openpyxl
 cd cesim18th
 
 # 方式1：使用默认路径
-python analyze_comprehensive_v3.py
+python scripts/analyze_comprehensive_v3.py
 
 # 方式2：指定自定义路径
-python analyze_comprehensive_v3.py --input-dir ./data --output-dir ./reports
+python scripts/analyze_comprehensive_v3.py --input-dir ./data --output-dir ./reports
 ```
 
 **注意**：如果使用自定义路径，确保数据目录中包含以下文件：

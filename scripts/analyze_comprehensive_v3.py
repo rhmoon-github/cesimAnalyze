@@ -13,8 +13,8 @@ from datetime import datetime
 from collections import defaultdict
 import json
 
-# 添加当前目录到路径
-sys.path.insert(0, str(Path(__file__).parent))
+# 添加utils目录到路径
+sys.path.insert(0, str(Path(__file__).parent.parent / 'utils'))
 
 from utils_data_analysis import (
     read_excel_data, find_metric, get_metric_value,
