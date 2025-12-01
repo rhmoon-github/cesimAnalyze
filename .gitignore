@@ -8,12 +8,6 @@ __pycache__/
 *.xlsx
 results-*.xls
 
-# 生成的报告（不提交）
-分析/
-*.md
-!README.md
-!结果分析方法.md
-
 # IDE配置
 .vscode/
 .idea/
