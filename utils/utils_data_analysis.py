@@ -35,11 +35,18 @@ def read_excel_data(file_path, team_row_idx=4, data_start_row=5):
     
     # 构建指标字典
     metrics_dict = {}
+    # 用于跟踪区域上下文（如"损益表, 千 USD, 全球"）
+    current_section = None
     
     for idx, row in data_df.iterrows():
         indicator = str(row['指标']).strip() if pd.notna(row['指标']) else ''
         
         if indicator == '' or indicator == 'nan':
+            continue
+        
+        # 检查是否是区域分隔符（如"损益表, 千 USD, 全球"）
+        if '损益表' in indicator or '资产负债表' in indicator:
+            current_section = indicator
             continue
         
         # 提取各队伍的数据
@@ -65,7 +72,28 @@ def read_excel_data(file_path, team_row_idx=4, data_start_row=5):
                 team_data[team] = None
         
         if any(v is not None for v in team_data.values()):
-            metrics_dict[indicator] = team_data
+            # 如果指标名称已存在，检查是否需要合并或选择最优值
+            if indicator in metrics_dict:
+                # 对于有多个同名指标的情况（如EBITDA），选择最优值
+                # 策略：优先选择数值大的（全局汇总），而不是小的百分比值
+                existing_data = metrics_dict[indicator]
+                for team in teams:
+                    existing_val = existing_data.get(team)
+                    new_val = team_data.get(team)
+                    if existing_val is not None and new_val is not None:
+                        # 对于EBITDA等指标，选择数值较大的（表示全局汇总）
+                        if 'EBITDA' in indicator or '息税折旧' in indicator:
+                            # 如果新值>100且旧值<100，或者新值明显大于旧值，使用新值
+                            if (abs(new_val) > 100 and abs(existing_val) < 100) or abs(new_val) > abs(existing_val) * 2:
+                                existing_data[team] = new_val
+                        else:
+                            # 对于其他指标，如果当前区域是全局汇总，优先使用新值
+                            if current_section and '全球' in current_section:
+                                existing_data[team] = new_val
+                    elif new_val is not None:
+                        existing_data[team] = new_val
+            else:
+                metrics_dict[indicator] = team_data
     
     return metrics_dict, teams
 
@@ -217,6 +245,7 @@ def diagnose_missing_data(file_path, target_metrics=None, target_team=None):
 def get_metric_value(metrics_dict, metric_name, team_name):
     """
     获取特定队伍和指标的数值（支持优先级列表）
+    优先匹配全局汇总值，避免匹配到区域性的值
     
     Args:
         metrics_dict: 指标字典
@@ -228,18 +257,66 @@ def get_metric_value(metrics_dict, metric_name, team_name):
     """
     # 如果metric_name是列表，按优先级顺序尝试匹配
     if isinstance(metric_name, list):
+        all_matches = []
         for name in metric_name:
-            metric_data = find_metric(metrics_dict, [name])
-            if metric_data and team_name in metric_data:
-                val = metric_data.get(team_name)
-                if val is not None:  # 只返回非None值
-                    return val
+            # 查找所有匹配的指标
+            for key, metric_data in metrics_dict.items():
+                if name in str(key) and team_name in metric_data:
+                    val = metric_data.get(team_name)
+                    if val is not None:
+                        # 验证数据合理性
+                        # 对于负债相关指标，如果值为负数且不是"总计"，跳过（可能是区域值）
+                        if '负债' in str(key) and val < 0 and '总计' not in str(key):
+                            continue
+                        
+                        # 对于EBITDA，优先选择数值大的（>100），表示全局汇总金额值
+                        # 数值小的（<100）可能是百分比值，应该排除
+                        if 'EBITDA' in str(key) or '息税折旧' in str(key):
+                            if abs(val) < 100:
+                                continue  # 跳过百分比值
+                        
+                        # 优先选择全局汇总表的数据（在"资产负债表, 千 USD, 全球"或"损益表, 千 USD, 全球"部分）
+                        priority = 0
+                        if '全球' in str(key) or '总计' in str(key):
+                            priority = 3
+                        elif any(region in str(key) for region in ['美国', '亚洲', '欧洲', 'America', 'Asia', 'Europe']):
+                            priority = 1
+                        
+                        # 对于EBITDA，数值越大通常表示全局汇总，给予更高优先级
+                        if ('EBITDA' in str(key) or '息税折旧' in str(key)) and abs(val) > 1000:
+                            priority += 2
+                        
+                        all_matches.append((priority, abs(val), val, str(key)))
+        
+        if all_matches:
+            # 按优先级和数值大小排序，优先返回全局汇总的大数值
+            all_matches.sort(key=lambda x: (-x[0], -x[1]))
+            return all_matches[0][2]  # 返回原始值（保留符号）
         return None
     else:
-        # 单个字符串，直接查找
-        metric_data = find_metric(metrics_dict, [metric_name])
-        if metric_data:
-            return metric_data.get(team_name)
+        # 单个字符串，查找所有匹配并选择最优的
+        all_matches = []
+        for key, metric_data in metrics_dict.items():
+            if metric_name in str(key) and team_name in metric_data:
+                val = metric_data.get(team_name)
+                if val is not None:
+                    # 应用相同的验证逻辑
+                    if '负债' in str(key) and val < 0 and '总计' not in str(key):
+                        continue
+                    if ('EBITDA' in str(key) or '息税折旧' in str(key)) and abs(val) < 100:
+                        continue
+                    # 优先选择全局汇总表的数据
+                    priority = 0
+                    if '全球' in str(key) or '总计' in str(key):
+                        priority = 2
+                    elif any(region in str(key) for region in ['美国', '亚洲', '欧洲', 'America', 'Asia', 'Europe']):
+                        priority = 1
+                    all_matches.append((priority, val, str(key)))
+        
+        if all_matches:
+            # 按优先级排序，优先返回全局汇总的值
+            all_matches.sort(key=lambda x: (-x[0], abs(x[1])), reverse=True)
+            return all_matches[0][1]
         return None
 
 

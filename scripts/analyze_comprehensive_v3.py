@@ -33,6 +33,7 @@ def get_data_files(input_dir):
     """
     根据输入目录自动检测所有符合命名规则的数据文件
     支持 ir00, pr01, pr02, pr03, pr04, pr05... 等任意数量的回合
+    同时支持 r01, r02, r03... 格式的命名
     """
     base_dir = Path(input_dir)
     files = {}
@@ -50,6 +51,15 @@ def get_data_files(input_dir):
         file_path = base_dir / f'results-{round_name}.xls'
         if file_path.exists():
             files[round_name] = file_path
+    
+    # 同时支持 r01, r02, r03... 格式（映射到 pr01, pr02, pr03...）
+    for i in range(1, 100):
+        r_format_path = base_dir / f'results-r{i:02d}.xls'
+        if r_format_path.exists():
+            pr_round_name = f'pr{i:02d}'
+            # 如果 pr 格式的文件不存在，则使用 r 格式的文件
+            if pr_round_name not in files:
+                files[pr_round_name] = r_format_path
     
     return files
 
@@ -97,6 +107,7 @@ def get_metric_priority_list(metric_name):
     """
     根据标准指标名称返回优先级列表
     用于指标提取时的优先级匹配
+    优先匹配全局汇总值，避免匹配到区域性的值
     """
     metric_priorities = {
         '销售额': ['销售额合计', '本地销售额', '当地销售额', '销售额'],
@@ -104,6 +115,9 @@ def get_metric_priority_list(metric_name):
         '现金': ['现金及等价物', '现金 31.12.', '现金 1.1.', '现金'],
         '短期贷款': ['短期贷款（无计划）', '短期贷款'],
         '长期贷款': ['长期贷款'],
+        '负债合计': ['负债总计', '负债合计'],  # 优先使用负债总计（全局），避免匹配到区域性的负值
+        '总资产': ['总资产'],  # 优先匹配全局汇总的总资产（在"资产负债表, 千 USD, 全球"部分）
+        'EBITDA': ['息税折旧及摊销前利润(EBITDA)'],  # 优先匹配全局汇总的EBITDA
     }
     return metric_priorities.get(metric_name, [metric_name])
 
@@ -115,18 +129,31 @@ def get_metric_with_priority(metrics_dict, metric_name, team):
 
 
 def validate_data_integrity(metrics_dict, teams):
-    """数据完整性验证（使用正确的会计恒等式）"""
+    """数据完整性验证（使用正确的会计恒等式）
+    
+    验证会计恒等式：总资产 = 权益合计 + 负债总计
+    确保所有值都来自同一层级（全局汇总表）
+    """
     issues = []
     
     for team in teams:
+        # 使用全局汇总的总资产、权益合计和负债总计
         assets = get_metric_value(metrics_dict, '总资产', team)
         equity = get_metric_value(metrics_dict, '权益合计', team)
-        # 使用负债合计而不是分别计算短期和长期贷款
-        liability_total = get_metric_value(metrics_dict, ['负债合计', '负债总计'], team)
+        # 优先使用负债总计（全局汇总），避免匹配到区域性的负值
+        liability_total = get_metric_value(metrics_dict, ['负债总计', '负债合计'], team)
+        
+        # 也可以使用"股东权益和负债总计"来验证
+        total_equity_liability = None
+        for key, metric_data in metrics_dict.items():
+            if '股东权益和负债总计' in str(key) and '全球' in str(key):
+                if team in metric_data:
+                    total_equity_liability = metric_data.get(team)
+                    break
         
         if assets and equity is not None:
-            # 正确的会计恒等式：总资产 = 权益合计 + 负债合计
-            if liability_total is not None:
+            # 方法1：验证会计恒等式：总资产 = 权益合计 + 负债总计
+            if liability_total is not None and liability_total > 0:
                 calculated = equity + liability_total
                 if assets > 0:
                     error_rate = abs(assets - calculated) / abs(assets) * 100
@@ -136,7 +163,22 @@ def validate_data_integrity(metrics_dict, teams):
                             'error_rate': error_rate,
                             'calculated': calculated,
                             'actual': assets,
-                            'status': '需要人工核查' if error_rate < 50 else '数据异常'
+                            'status': '需要人工核查' if error_rate < 50 else '数据异常',
+                            'note': f'权益({equity:.0f}) + 负债({liability_total:.0f}) = {calculated:.0f}，实际资产={assets:.0f}'
+                        })
+            
+            # 方法2：使用"股东权益和负债总计"验证
+            if total_equity_liability is not None:
+                if assets > 0:
+                    error_rate = abs(assets - total_equity_liability) / abs(assets) * 100
+                    if error_rate > 5:  # 使用总计值，误差容忍度更严格
+                        issues.append({
+                            'team': team,
+                            'error_rate': error_rate,
+                            'calculated': total_equity_liability,
+                            'actual': assets,
+                            'status': '数据不一致',
+                            'note': f'总资产({assets:.0f})与股东权益和负债总计({total_equity_liability:.0f})不一致'
                         })
     
     return issues
@@ -308,9 +350,16 @@ def calculate_financial_health(metrics_dict, teams):
             health[team]['status']['净债务权益比'] = '🔴'
         
         # 3. EBITDA率
-        ebitda = get_metric_value(metrics_dict, 'EBITDA', team)
+        # 优先使用全局汇总的EBITDA，避免匹配到百分比值或区域值
+        # 使用优先级列表匹配，确保提取到正确的全局汇总值
+        ebitda = get_metric_value(metrics_dict, ['息税折旧及摊销前利润(EBITDA)', '息税折旧及摊销前利润', 'EBITDA'], team)
+        
+        # 验证提取的EBITDA值是否合理
         if ebitda is None:
-            ebitda = get_metric_value(metrics_dict, '息税折旧及摊销前利润', team) or 0
+            ebitda = 0
+        elif abs(ebitda) < 100:
+            # 值太小（<100），可能是百分比，设为0
+            ebitda = 0
         else:
             ebitda = ebitda or 0
         
@@ -390,10 +439,10 @@ def analyze_cash_flow_source(metrics_dict, teams, prev_metrics_dict):
         prev_cash = get_metric_with_priority(prev_metrics_dict, '现金', team) or 0 if prev_metrics_dict else 0
         cash_change = cash - prev_cash
         
-        # 修复：确保能提取到EBITDA值
-        ebitda = get_metric_value(metrics_dict, 'EBITDA', team)
-        if ebitda is None:
-            ebitda = get_metric_value(metrics_dict, '息税折旧及摊销前利润', team) or 0
+        # 修复：确保能提取到EBITDA值（优先使用全局汇总，避免百分比值）
+        ebitda = get_metric_value(metrics_dict, ['息税折旧及摊销前利润(EBITDA)', '息税折旧及摊销前利润', 'EBITDA'], team)
+        if ebitda is None or (ebitda is not None and abs(ebitda) < 100):
+            ebitda = 0
         else:
             ebitda = ebitda or 0
         
@@ -626,15 +675,16 @@ def detect_strategy_changes(all_rounds_data, teams):
                 })
             
             # 2. 战略稳定性指数
-            ebitda1 = get_metric_value(metrics1, 'EBITDA', team)
-            if ebitda1 is None:
-                ebitda1 = get_metric_value(metrics1, '息税折旧及摊销前利润', team) or 0
+            # 使用优先级列表匹配EBITDA，确保提取到全局汇总值
+            ebitda1 = get_metric_value(metrics1, ['息税折旧及摊销前利润(EBITDA)', '息税折旧及摊销前利润', 'EBITDA'], team)
+            if ebitda1 is None or (ebitda1 is not None and abs(ebitda1) < 100):
+                ebitda1 = 0
             else:
                 ebitda1 = ebitda1 or 0
             
-            ebitda2 = get_metric_value(metrics2, 'EBITDA', team)
-            if ebitda2 is None:
-                ebitda2 = get_metric_value(metrics2, '息税折旧及摊销前利润', team) or 0
+            ebitda2 = get_metric_value(metrics2, ['息税折旧及摊销前利润(EBITDA)', '息税折旧及摊销前利润', 'EBITDA'], team)
+            if ebitda2 is None or (ebitda2 is not None and abs(ebitda2) < 100):
+                ebitda2 = 0
             else:
                 ebitda2 = ebitda2 or 0
             rd1 = get_metric_value(metrics1, '研发', team) or 0
@@ -709,10 +759,10 @@ def predict_next_move(all_rounds_data, teams, round_name, derived_metrics):
         short_debt = get_metric_value(metrics_dict, '短期贷款', team) or 0
         long_debt = get_metric_value(metrics_dict, '长期贷款', team) or 0
         
-        # 修复：确保能提取到EBITDA值
-        ebitda = get_metric_value(metrics_dict, 'EBITDA', team)
-        if ebitda is None:
-            ebitda = get_metric_value(metrics_dict, '息税折旧及摊销前利润', team) or 0
+        # 修复：确保能提取到EBITDA值（优先使用全局汇总，避免百分比值）
+        ebitda = get_metric_value(metrics_dict, ['息税折旧及摊销前利润(EBITDA)', '息税折旧及摊销前利润', 'EBITDA'], team)
+        if ebitda is None or (ebitda is not None and abs(ebitda) < 100):
+            ebitda = 0
         else:
             ebitda = ebitda or 0
         
@@ -839,13 +889,13 @@ def generate_strategy_recommendations(health_data, cash_flow_data, competitive_m
             if sales_growth > 10:
                 actions.append('销售增长>10% → 考虑扩产')
                 if total_allocated < max_available:
-                    expand_pct = min(60, max_available - total_allocated)
+                    expand_pct = min(40, max_available - total_allocated)  # 降低到40%
                     allocation['扩产'] = expand_pct
                     total_allocated += expand_pct
             
             if comp_pos.get('技术投入度', 0) < 5 and total_allocated < max_available:
                 actions.append('技术空白市场 → 研发+进入')
-                rd_pct = min(40, max_available - total_allocated)
+                rd_pct = min(30, max_available - total_allocated)  # 降低到30%
                 allocation['研发'] = rd_pct
                 total_allocated += rd_pct
             
@@ -858,9 +908,20 @@ def generate_strategy_recommendations(health_data, cash_flow_data, competitive_m
             # 如果没有其他分配，默认分配剩余资源到广告
             if not allocation and max_available > 0:
                 actions.append('维持当前策略，适度投资')
-                allocation['广告'] = min(30, max_available)
+                allocation['广告'] = min(20, max_available)  # 降低到20%
+                total_allocated += allocation['广告']
             
-            allocation['现金保留'] = cash_reserve_pct + (max_available - total_allocated)
+            # 确保总和不超过100%，将剩余部分分配给现金保留
+            remaining = max_available - total_allocated
+            allocation['现金保留'] = cash_reserve_pct + max(0, remaining)
+            
+            # 最终验证：如果总和超过100%，按比例缩减
+            total = sum(v for v in allocation.values() if isinstance(v, (int, float)))
+            if total > 100:
+                scale = 100 / total
+                for key in allocation:
+                    if isinstance(allocation[key], (int, float)):
+                        allocation[key] = allocation[key] * scale
             
             if not actions:
                 actions.append('维持当前策略，观察对手动态')
